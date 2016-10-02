@@ -1,0 +1,23 @@
+{
+  "name": "holly-node",
+  "description": "",
+  "main": "index.js",
+  "authors": [
+    "viet <tnguen@alfabank.ru>"
+  ],
+  "license": "ISC",
+  "moduleType": [],
+  "homepage": "",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "bootstrap": "^3.3.7",
+    "video.js": "^5.13.0"
+  }
+}
