@@ -13,7 +13,7 @@ $(function() {
     var modal = $(this)
     modal.find('.modal-title').text(videoTitle);
 
-    $.getJSON('/videos/' + videoId + '/url', function(video) {
+    $.getJSON('/videos/' + encodeURIComponent(videoId) + '/url', function(video) {
       videojs('videojs-player').src({type: videoType, src: video.url});
     });
   })

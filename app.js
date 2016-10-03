@@ -1,128 +1,101 @@
 var express = require('express');
-var Minio = require('minio');
+var fs = require('fs');
+var path = require('path');
+var util = require('util');
 var _ = require('lodash');
 
 var moment = require('moment');
 moment.locale('ru');
 
 
-startServerWith(minioClient());
+startServerWith(fsClient());
 
 
-function minioClient() {
-  var minioHost = process.env.MINIO_HOST || 'localhost'
-  var minioPort = process.env.MINIO_PORT || '9000'
-  var minioUrl = process.env.MINIO_URL
-
-  var minioAccessKey = process.env.MINIO_ACCESS_KEY || ''
-  var minioSecretKey = process.env.MINIO_SECRET_KEY || ''
-
-  var videosBucket = process.env.VIDEOS_BUCKET || 'videos'
+function fsClient() {
+  var config = {
+    videos: {
+      dir: process.env.VIDEOS_DIR || '/data/videos',
+      serverUrl: process.env.VIDEOS_SERVER_URL || 'http://localhost'
+    },
+    mimeTypes: {
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      webm: 'video/webm',
+      ogv: 'video/ogg'
+    }
+  };
 
   console.log('-- config -----------------------------------');
-
-  console.log('minio host: ', minioHost);
-  console.log('minio port: ', minioPort);
-  console.log('minio url: ', minioUrl);
-
-  console.log('minio access key len: ', minioAccessKey.length);
-  console.log('minio secret key len: ', minioSecretKey.length);
-
-  console.log('videos bucket: ', videosBucket);
-
+  console.log(config);
   console.log('---------------------------------------------');
 
-  var minio = {
-    client: new Minio.Client({
-      endPoint: minioHost,
-      port: parseInt(minioPort),
-      secure: false,
-      accessKey: minioAccessKey,
-      secretKey: minioSecretKey
-    }),
-    videosBucket: videosBucket,
-    url: minioUrl,
-    host: minioHost,
-    port: minioPort
-  };
-
   return {
-    getVideos: getVideosWith(minio),
-    getUrlFor: getVideoUrlWith(minio)
+    getVideosByCategories: fsVideosWith(config),
+    getUrlFor: fsVideoUrlWith(config)
   };
 }
 
 
-function getVideosWith(minio) {
-  var mimeTypes = {
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
-    webm: 'video/webm',
-    ogv: 'video/ogg'
-  };
+function fsVideosWith(config) {
+  var videosDir = config.videos.dir;
 
   return function(cb, errHandler) {
-    var stream = minio.client.listObjectsV2(minio.videosBucket);
+    var categories = _(fs.readdirSync(videosDir))
+      .filter(function(file) {
+        return fs.lstatSync(path.join(videosDir, file)).isDirectory();
+      })
+      .map(function(categoryDir) {
+        return {
+          name: categoryDir,
+          videos: _(fs.readdirSync(path.join(videosDir, categoryDir)))
+          .map(function(file) {
+            return {
+              name: file,
+              mime: config.mimeTypes[file.split('.').pop()] 
+            };
+          })
+          .filter(function(file) {
+            return file.mime;
+          })
+          .map(function(file) {
+            var filePath = path.join(videosDir, categoryDir, file.name);
+            var stat = fs.lstatSync(filePath);
+            var meta = util.inspect(stat);
 
-    var videos = [];
+            return {
+              id: new Buffer(filePath).toString('base64'),
+              title: file.name.replace(/\.[^/.]+$/, ''),
+              modificationTime: moment(meta.mtime).calendar(),
+              mime: file.mime
+            };
+          })
 
-    stream.on('data', function(video) {
-      var videoExt = video.name.split('.').pop();
-      if (!mimeTypes[videoExt]) {
-        return;
-      }
+          .value()
+        };
+      })
+      .filter(function(category) {
+        return category.videos.length > 0;
+      })
+      .sortBy(['name'])
+      .value();
 
-      videos.push({
-        id: video.name,
-        title: video.name.replace(/\.[^/.]+$/, ''),
-        mime: mimeTypes[videoExt],
-        modificationTime: moment(video.lastModified).calendar()
-      });
-    });
-
-    stream.on('end', function() {
-      cb(_(videos)
-        .orderBy(['modificationTime'], ['desc'])
-        .value()
-      );
-    });
-
-    stream.on('error', function(err) {
-      if (errHandler) {
-        errHandler(err);
-      } else {
-        console.error(err);
-      }
-    });
+    cb(categories);
   };
-}
+} 
 
 
-function getVideoUrlWith(minio) {
+function fsVideoUrlWith(config) {
   return function(videoId, cb, errHandler) {
-    minio.client.presignedGetObject(minio.videosBucket, videoId, function(err, url) {
-      if (err) {
-        if (errHandler) {
-          return errHandler(err);
-        } 
-
-        return console.error(err);
-      }
-
-      if (minio.url) {
-        url = url.replace(minio.host + ':' + minio.port, minio.url);
-      }
-
-      cb(url);
-    });
+    var filePath = new Buffer(videoId, 'base64').toString('utf8');
+    cb(filePath.replace(config.videos.dir, config.videos.serverUrl));
   };
 }
 
 
-function startServerWith(minioClient) {
+function startServerWith(videoStorage) {
   var app = express();
 
-  var companyName = process.env.COMPANY_NAME || '';
+  var companyName = process.env.COMPANY_NAME || 'holly';
 
   app.set('view engine', 'pug');
 
@@ -130,13 +103,13 @@ function startServerWith(minioClient) {
   app.use('/static', express.static(__dirname + '/static'));
 
   app.get('/', function (req, res) {
-    minioClient.getVideos(function(videos) {
-      res.render('index', {companyName: companyName, videos: videos});
+    videoStorage.getVideosByCategories(function(categories) {
+      res.render('index', {categories: categories, companyName: companyName});
     });
   });
 
   app.get('/videos/:videoId/url', function(req, res) {
-    minioClient.getUrlFor(req.params.videoId, function(url) {
+    videoStorage.getUrlFor(req.params.videoId, function(url) {
       res.send({url: url});
     });
   });

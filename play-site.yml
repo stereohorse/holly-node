@@ -1,21 +1,15 @@
 - hosts: video
   become: yes
   vars_prompt:
-    - name: minio_access_key
-      prompt: login
-      default: rooty
-      private: no
-
-    - name: minio_secret_key
-      prompt: password
-      default: evangelina
-      private: yes
-
     - name: holly_version
       prompt: holly version
       default: latest
       private: no
 
+    - name: videos_dir
+      prompt: videos directory
+      default: /data/holly 
+      private: no
   tasks:
     - name: create nginx dirs
       file: path=/data/nginx/config state=directory recurse=yes
@@ -23,44 +17,29 @@
     - name: copy nginx config
       template: src=site.conf dest=/data/nginx/config
 
+    - name: create data dirs
+      file: path=/data/holly state=directory recurse=yes
+
+
     - name: start proxy
       docker_container:
         name: nginx
         image: nginx
         volumes:
           - /data/nginx/config:/etc/nginx/conf.d
+          - "{{ videos_dir }}:/data/holly"
         ports:
           - '80:80'
-
-
-    - name: create minio dirs
-      file: path=/data/minio/export state=directory recurse=yes
-
-    - name: start minio
-      docker_container:
-        name: minio
-        image: minio/minio
-        volumes:
-          - /data/minio/export:/export
-        command: /export
-        ports:
-          - '9000:9000'
-        env:
-          MINIO_ACCESS_KEY: "{{ minio_access_key }}"
-          MINIO_SECRET_KEY: "{{ minio_secret_key }}"
 
 
     - name: start holly
       docker_container:
         name: holly
         image: "0x06065a/holly-node:{{ holly_version }}"
+        volumes:
+          - "{{ videos_dir }}:/data/holly"
         ports:
           - '3000:3000'
-        links:
-          - minio:minio
         env:
-          MINIO_HOST: "{{ ansible_default_ipv4.address }}"
-          MINIO_PORT: 9000
-          MINIO_URL: "{{ ansible_default_ipv4.address }}/minio"
-          MINIO_ACCESS_KEY: "{{ minio_access_key }}"
-          MINIO_SECRET_KEY: "{{ minio_secret_key }}"
+          VIDEOS_DIR: /data/holly
+          VIDEOS_SERVER_URL: "http://{{ ansible_default_ipv4.address }}/storage"
