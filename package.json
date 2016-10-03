@@ -10,7 +10,9 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.14.0",
+    "lodash": "^4.16.2",
     "minio": "^3.0.0",
+    "moment": "^2.15.1",
     "pug": "^2.0.0-beta6"
   }
 }

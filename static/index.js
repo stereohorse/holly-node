@@ -1,4 +1,8 @@
 $(function() {
+  $('#video-player').on('hide.bs.modal', function (event) {
+    videojs('videojs-player').pause();
+  });
+
   $('#video-player').on('show.bs.modal', function (event) {
     var button = $(event.relatedTarget);
 

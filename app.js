@@ -1,5 +1,9 @@
 var express = require('express');
 var Minio = require('minio');
+var _ = require('lodash');
+
+var moment = require('moment');
+moment.locale('ru');
 
 
 startServerWith(minioClient());
@@ -8,9 +12,10 @@ startServerWith(minioClient());
 function minioClient() {
   var minioHost = process.env.MINIO_HOST || 'localhost'
   var minioPort = process.env.MINIO_PORT || '9000'
+  var minioUrl = process.env.MINIO_URL
 
   var minioAccessKey = process.env.MINIO_ACCESS_KEY || ''
-  var minioSecureKey = process.env.MINIO_SECURE_KEY || ''
+  var minioSecretKey = process.env.MINIO_SECRET_KEY || ''
 
   var videosBucket = process.env.VIDEOS_BUCKET || 'videos'
 
@@ -18,9 +23,10 @@ function minioClient() {
 
   console.log('minio host: ', minioHost);
   console.log('minio port: ', minioPort);
+  console.log('minio url: ', minioUrl);
 
   console.log('minio access key len: ', minioAccessKey.length);
-  console.log('minio secure key len: ', minioSecureKey.length);
+  console.log('minio secret key len: ', minioSecretKey.length);
 
   console.log('videos bucket: ', videosBucket);
 
@@ -32,9 +38,12 @@ function minioClient() {
       port: parseInt(minioPort),
       secure: false,
       accessKey: minioAccessKey,
-      secretKey: minioSecureKey
+      secretKey: minioSecretKey
     }),
-    videosBucket: videosBucket
+    videosBucket: videosBucket,
+    url: minioUrl,
+    host: minioHost,
+    port: minioPort
   };
 
   return {
@@ -66,12 +75,16 @@ function getVideosWith(minio) {
       videos.push({
         id: video.name,
         title: video.name.replace(/\.[^/.]+$/, ''),
-        mime: mimeTypes[videoExt]
+        mime: mimeTypes[videoExt],
+        modificationTime: moment(video.lastModified).calendar()
       });
     });
 
     stream.on('end', function() {
-      cb(videos);
+      cb(_(videos)
+        .orderBy(['modificationTime'], ['desc'])
+        .value()
+      );
     });
 
     stream.on('error', function(err) {
@@ -96,6 +109,10 @@ function getVideoUrlWith(minio) {
         return console.error(err);
       }
 
+      if (minio.url) {
+        url = url.replace(minio.host + ':' + minio.port, minio.url);
+      }
+
       cb(url);
     });
   };
@@ -105,6 +122,8 @@ function getVideoUrlWith(minio) {
 function startServerWith(minioClient) {
   var app = express();
 
+  var companyName = process.env.COMPANY_NAME || '';
+
   app.set('view engine', 'pug');
 
   app.use('/bower', express.static(__dirname + '/bower_components'));
@@ -112,7 +131,7 @@ function startServerWith(minioClient) {
 
   app.get('/', function (req, res) {
     minioClient.getVideos(function(videos) {
-      res.render('index', {videos: videos});
+      res.render('index', {companyName: companyName, videos: videos});
     });
   });
 
