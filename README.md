@@ -1,6 +1,5 @@
 # Simple video cms
 
-Consists of nodejs app and minio storage.
 
 ## Build
 
